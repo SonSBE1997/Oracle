@@ -1,0 +1,54 @@
+# Firewall configuration written by system-config-firewall
+# Manual customization of this file is not recommended.
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+
+### Default Input
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -p icmp -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+### Default Output
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -p icmp -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+###################################
+-A INPUT -s 192.168.10.121/24 -m state --state NEW -m tcp -p tcp --dport 22 -j ACCEPT -m comment --comment "Quan tri"
+-A INPUT -s 192.168.10.122/24 -m state --state NEW -m tcp -p tcp --dport 22 -j ACCEPT -m comment --comment "Quan tri"
+-A INPUT -s 192.168.10.123/24 -m state --state NEW -m tcp -p tcp --dport 22 -j ACCEPT -m comment --comment "Quan tri"
+
+-A OUTPUT -m state --state NEW -m tcp -p tcp --dport 1521 -j ACCEPT -m comment --comment "Ket noi database"
+
+#####################################
+#####
+-A INPUT -s 10.61.68.64/26 -m state --state NEW -m tcp -p tcp --dport 22 -j ACCEPT -m comment --comment "Quan tri"
+#####
+-A INPUT -m state --state NEW -m tcp -p tcp -m multiport --dports 80,443,8000:10000  -j ACCEPT -m comment --comment "Ung dung"
+#####
+-A INPUT -s 10.61.68.0/24 -m state --state NEW -m tcp -p tcp --dport 22 -j ACCEPT -m comment --comment "Doi du an"
+#####
+-A OUTPUT -m state --state NEW -d 10.60.15.54 -m tcp -p tcp --dport 1521 -j ACCEPT -m comment --comment "Ket noi database"
+
+#NTP Tap Doan
+-A OUTPUT -m state --state NEW -m tcp -p tcp -d 192.168.181.50 --dport 123 -j ACCEPT
+-A OUTPUT -m state --state NEW -m udp -p udp -d 192.168.181.50 --dport 123 -j ACCEPT
+
+#Outbound UDP traffic Policy
+-A OUTPUT -p udp --dport 33434:33524 -m state --state NEW -j ACCEPT
+-A INPUT -p udp --sport 33434:33524 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+#Inbound ICMP traffic Policy
+-A INPUT -p icmp --icmp-type any -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+-A OUTPUT -p icmp --icmp-type any  -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+
+###Ghi lai Log truy nhap
+-A INPUT -j LOG --log-level 4 --log-prefix "IPTABLES DROP"
+-A FORWARD -j LOG --log-level 4 --log-prefix "IPTABLES DROP"
+-A OUTPUT -j LOG --log-level 4 --log-prefix "IPTABLES DROP"
+
+#Implicit rule
+-A INPUT -j REJECT --reject-with icmp-host-prohibited
+-A FORWARD -j REJECT --reject-with icmp-host-prohibited
+-A OUTPUT -j REJECT --reject-with icmp-host-prohibited
+
+COMMIT

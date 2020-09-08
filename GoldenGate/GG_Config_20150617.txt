@@ -1,0 +1,261 @@
+﻿-- Config oracle Goldengate Saleonline
+-- IP: 10.30.144.149
+-- User: Oracle
+-- Directory: /u02/gg
+-- Tiến trình:
+1- kiểm tra các tiến trình: info all
+
+Oracle GoldenGate Command Interpreter for Oracle
+Version 11.2.1.0.1 OGGCORE_11.2.1.0.1_PLATFORMS_120423.0230_FBO
+Linux, x64, 64bit (optimized), Oracle 11g on Apr 23 2012 08:32:14
+
+Copyright (C) 1995, 2012, Oracle and/or its affiliates. All rights reserved.
+
+
+
+GGSCI (PTTH-TS-DB02) 1> info all
+
+Program     Status      Group       Lag at Chkpt  Time Since Chkpt
+
+MANAGER     RUNNING                                           
+REPLICAT    RUNNING     REP1        00:00:00      00:00:02    
+REPLICAT    RUNNING     REP2        00:00:00      00:00:04    
+REPLICAT    RUNNING     REP7        00:00:00      00:00:01    
+
+
+2- Kiểm tra thông tin từng tiến trình:
+info [Program] [GROUP]
+ví dụ:
+-- lệnh: info extracrt ext_so1 (kiểm tra thông tin tiến trình ext_so1
+-- kết quả:
+GGSCI (vnm-so-db-02) 5> info extract ext_so1
+
+EXTRACT    EXT_SO1   Last Started 2015-05-06 01:23   Status RUNNING
+Checkpoint Lag       00:00:00 (updated 00:00:07 ago)
+Log Read Checkpoint  Oracle Redo Logs
+                     2015-05-28 11:15:59  Thread 1, Seqno 82, RBA 1784693728
+                     SCN 12.317248419 (51856855971)
+Log Read Checkpoint  Oracle Redo Logs
+                     2015-05-28 11:15:57  Thread 2, Seqno 145, RBA 2409154024
+                     SCN 12.317248226 (51856855778)
+3- Kiểm tra thông tin cấu hình
+-- lệnh: show | show all
+Parameter settings:
+
+SET SUBDIRS    ON
+SET DEBUG      OFF
+
+Current directory: /u03/gg
+
+Using subdirectories for all process files
+
+Editor:  vi
+
+Reports (.rpt)                 /u03/gg/dirrpt
+Parameters (.prm)              /u03/gg/dirprm
+Stdout (.out)                  /u03/gg/dirout
+Replicat Checkpoints (.cpr)    /u03/gg/dirchk
+Extract Checkpoints (.cpe)     /u03/gg/dirchk
+Process Status (.pcs)          /u03/gg/dirpcs
+SQL Scripts (.sql)             /u03/gg/dirsql
+Database Definitions (.def)    /u03/gg/dirdef
+
+4- Kiểm tra trạng thái tiến trình
+-- lệnh: status all | show [GROUP]
+-- kết quả:
+
+GGSCI (vnm-so-db-02) 9> status all
+
+Program     Status      Group       Lag at Chkpt  Time Since Chkpt
+
+MANAGER     RUNNING                                           
+EXTRACT     RUNNING     EXT_SO1     00:00:00      00:00:09    
+EXTRACT     RUNNING     EXT_SS1     00:00:00      00:00:02    
+EXTRACT     RUNNING     EXT_SS2     00:00:00      00:00:05    
+EXTRACT     RUNNING     EXT_SS3     00:00:00      00:00:00    
+EXTRACT     RUNNING     EXT_SS4     00:00:02      00:00:01    
+EXTRACT     RUNNING     PUM_SS1     00:00:00      00:00:06    
+EXTRACT     RUNNING     PUM_SS2     00:00:00      00:00:00    
+EXTRACT     RUNNING     PUM_SS3     00:00:00      00:00:01    
+EXTRACT     RUNNING     PUM_SS4     00:00:00      00:00:01    
+EXTRACT     RUNNING     P_SO1       00:00:00      00:00:10    
+REPLICAT    RUNNING     REP_REL1    00:00:00      00:00:00    
+REPLICAT    RUNNING     REP_REL2    00:00:03      00:00:09    
+REPLICAT    RUNNING     REP_REL3    00:00:00      00:00:05    
+REPLICAT    RUNNING     REP_REL4    00:00:00      00:00:05    
+REPLICAT    RUNNING     REP_REL5    00:00:00      00:00:08    
+REPLICAT    RUNNING     REP_REL8    00:00:00      00:00:02    
+REPLICAT    RUNNING     R_VNM1      00:00:00      00:00:00   
+
+5- stop start
+-- lệnh: START [GROUP] | START ALL
+		 STOP [GROUP] STOP ALL
+
+6- view thông tin cấu hình
+-- lệnh: view [GROUP]
+-- kết quả:
+GGSCI (vnm-so-db-02) 13> view params EXT_SO1
+
+EXTRACT ext_so1
+-- Reporting
+reportrollover on Monday
+reportcount every 1 hours, rate
+USERID ogg, PASSWORD oGg#2014
+TRANLOGOPTIONS ASMUSER sys@asm, ASMPASSWORD Password#2015
+discardfile ./dirout/ext_so1.dsc, APPEND                       
+EXTTRAIL /u03/gg/dirdat/dirdat_new/s5
+TABLE SO_RELEASE.TRAINING_RATE;
+TABLE SO_RELEASE.TRAINING_RATE_DEFAULT;
+TABLE SO_RELEASE.TRAINING_RATE_DEFAULT_DTL;
+TABLE SO_RELEASE.TRAINING_RATE_DETAIL;
+TABLE SO_RELEASE.SUP_TRAINING_CUSTOMER;
+TABLE SO_RELEASE.SUP_TRAINING_ISSUE;
+TABLE SO_RELEASE.SUP_TRAINING_PLAN;
+TABLE SO_RELEASE.SUP_TRAINING_RESULT;
+
+
+6- Kiểm tra trạng thái chi tiết từng tiến trình
+-- lệnh: stats [GROUP] | stats all
+-- kết quả:
+
+
+GGSCI (vnm-so-db-02) 17> stats ext_so1
+
+Sending STATS request to EXTRACT EXT_SO1 ...
+
+Start of Statistics at 2015-05-28 13:52:06.
+
+Output to /u03/gg/dirdat/dirdat_new/s5:
+
+Extracting from SO_RELEASE.TRAINING_RATE to SO_RELEASE.TRAINING_RATE:
+
+*** Total statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                     75.00
+        Total updates                                      0.00
+        Total deletes                                      0.00
+        Total discards                                     0.00
+        Total operations                                  75.00
+
+*** Daily statistics since 2015-05-28 00:00:00 ***
+
+        No database operations have been performed.
+
+*** Hourly statistics since 2015-05-28 13:00:00 ***
+
+        No database operations have been performed.
+
+*** Latest statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                     75.00
+        Total updates                                      0.00
+        Total deletes                                      0.00
+        Total discards                                     0.00
+        Total operations                                  75.00
+
+Extracting from SO_RELEASE.TRAINING_RATE_DETAIL to SO_RELEASE.TRAINING_RATE_DETAIL:
+
+*** Total statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                    492.00
+        Total updates                                  21893.00
+        Total deletes                                     12.00
+        Total discards                                     0.00
+        Total operations                               22397.00
+
+*** Daily statistics since 2015-05-28 00:00:00 ***
+        Total inserts                                     18.00
+        Total updates                                   1902.00
+        Total deletes                                      0.00
+        Total discards                                     0.00
+        Total operations                                1920.00
+
+*** Hourly statistics since 2015-05-28 13:00:00 ***
+
+        No database operations have been performed.
+
+*** Latest statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                    492.00
+        Total updates                                  21893.00
+        Total deletes                                     12.00
+        Total discards                                     0.00
+        Total operations                               22397.00
+
+Extracting from SO_RELEASE.SUP_TRAINING_PLAN to SO_RELEASE.SUP_TRAINING_PLAN:
+
+*** Total statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                    259.00
+        Total updates                                      0.00
+        Total deletes                                    166.00
+        Total discards                                     0.00
+        Total operations                                 425.00
+
+*** Daily statistics since 2015-05-28 00:00:00 ***
+        Total inserts                                      7.00
+        Total updates                                      0.00
+        Total deletes                                      8.00
+        Total discards                                     0.00
+        Total operations                                  15.00
+
+*** Hourly statistics since 2015-05-28 13:00:00 ***
+
+        No database operations have been performed.
+
+*** Latest statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                    259.00
+        Total updates                                      0.00
+        Total deletes                                    166.00
+        Total discards                                     0.00
+        Total operations                                 425.00
+
+Extracting from SO_RELEASE.SUP_TRAINING_ISSUE to SO_RELEASE.SUP_TRAINING_ISSUE:
+
+*** Total statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                     41.00
+        Total updates                                      1.00
+        Total deletes                                      0.00
+        Total discards                                     0.00
+        Total operations                                  42.00
+
+*** Daily statistics since 2015-05-28 00:00:00 ***
+
+        No database operations have been performed.
+
+*** Hourly statistics since 2015-05-28 13:00:00 ***
+
+        No database operations have been performed.
+
+*** Latest statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                     41.00
+        Total updates                                      1.00
+        Total deletes                                      0.00
+        Total discards                                     0.00
+        Total operations                                  42.00
+
+Extracting from SO_RELEASE.TRAINING_RATE_DEFAULT_DTL to SO_RELEASE.TRAINING_RATE_DEFAULT_DTL:
+
+*** Total statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                      0.00
+        Total updates                                      0.00
+        Total deletes                                      6.00
+        Total discards                                     0.00
+        Total operations                                   6.00
+
+*** Daily statistics since 2015-05-28 00:00:00 ***
+
+        No database operations have been performed.
+
+*** Hourly statistics since 2015-05-28 13:00:00 ***
+
+        No database operations have been performed.
+
+*** Latest statistics since 2015-05-06 03:18:29 ***
+        Total inserts                                      0.00
+        Total updates                                      0.00
+        Total deletes                                      6.00
+        Total discards                                     0.00
+        Total operations                                   6.00
+
+End of Statistics.
+
+
+
+
+

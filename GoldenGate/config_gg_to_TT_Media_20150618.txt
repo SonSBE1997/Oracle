@@ -1,0 +1,132 @@
+﻿-- Step config Goldengate sync from THI_QG to TT_Media
+-- Cấu hình goldengate trên máy chủ nguồn
+-- IP: 10.30.144.149
+- B1: Tạo user gg -- đã tạo
+-- Kiểm tra thông tin các process hiện tại
+
+GGSCI (PTTH-TS-DB02) 1> info all
+
+Program     Status      Group       Lag at Chkpt  Time Since Chkpt
+
+MANAGER     RUNNING                                           
+REPLICAT    RUNNING     REP1        00:00:00      00:00:02    
+REPLICAT    RUNNING     REP2        00:00:00      00:00:05    
+REPLICAT    RUNNING     REP7        00:00:00      00:00:01  
+
+- B2: Thực hiện enable supplemental log
+
+alter database add supplemental log data;
+alter system switch logfile;
+
+####Kiểm tra lại 
+SQL> SELECT SUPPLEMENTAL_LOG_DATA_MIN FROM V$DATABASE;
+
+- B3: Thêm thông tin các bảng cần đồng bộ vào gg
+
+ggsci (source)> dblogin userid ogg, password  qwer1234
+ggsci (source)> add trandata THI_QG.THONGTIN_THISINH
+
+- B4: Thêm tiến trình extract
+ggsci (source)> add extract ext1, TRANLOG, BEGIN NOW, threads 2
+ggsci (source)> add exttrail /u02/gg/dirdat/hh, extract ext1 
+
+- B5: Cấu hình tiến trình extract
+GGSCI (source) > edit param ext1
+EXTRACT ext1
+reportrollover on Monday
+reportcount every 1 hours, rate
+USERID ogg, PASSWORD qwer1234
+TRANLOGOPTIONS ASMUSER sys@asm, ASMPASSWORD Password#2014
+discardfile ./dirout/ext1.dsc, APPEND                       
+EXTTRAIL /u02/gg/dirdat/hh
+table THI_QG.THONGTIN_THISINH;
+
+- B6: Thêm tiến trình pump
+ggsci (source)> add EXTRACT pump1, EXTTRAILSOURCE /u02/gg/dirdat/hh 		
+ggsci (source)> add RMTTRAIL /u02/gg/dirdat/hh, EXTRACT pump1
+
+ADD EXTTRAIL /u01/app/gg/dirdat/hh, EXTRACT PUMP1
+
+- B7: cấu hình tiến trình pump
+GGSCI (source) > edit param pump1
+EXTRACT pump1
+USERID ogg, PASSWORD qwer1234                       
+discardfile ./dirout/pump1.dsc, APPEND        
+reportrollover on Monday          
+reportcount every 1 hours, rate                                    
+RMTHOST 10.58.4.4, MGRPORT 7809  
+RMTTRAIL /u01/app/gg/dirdat/hh 
+PASSTHRU                          
+table THI_QG.THONGTIN_THISINH;
+
+-- Cấu hình goldengate trên máy chủ đích
+-- IP: 10.58.4.4
+-- oracle:  Media@#$2014
+- B1: Cài đặt  GG 
+cp file fbo_ggs_Linux_x64_ora11g_64bit.tar vào /u01/app/gg trên máy chủ 10.58.4.4
+thực hiện giải nén file
+
+- B2: Tạo user gg, gán quyền
+create user ogg identified by qwer1234;
+grant create session, dba to ogg;
+
+- B3: Tạo các thư mục mặc định
+cd /u01/app/gg
+./ggsci
+create subdirs
+
+- B4: Tạo tiến trình mgr
+GGSCI > DBLOGIN USERID ogg, PASSWORD qwer1234
+GGSCI > EDIT PARAMS MGR
+
+port 7809
+PURGEOLDEXTRACTS ./dirdat/*, USECHECKPOINTS, MINKEEPHOURS 120
+autostart er *                                     
+autorestart er * , WAITMINUTES 10, RETRIES 20      
+
+- B5: Tạo tiến trình replication
+
+ggsci (dest)> DBLOGIN USERID ogg, PASSWORD qwer1234
+ggsci (dest)> add checkpointtable ogg.chkpt_table
+ggsci (dest)> add REPLICAT rep1, EXTTRAIL /u01/app/gg/dirdat/hh, checkpointtable ogg.chkpt_table
+
+- B6: Cấu hình tiến trình rep1
+
+GGSCI (dest) > edit param rep1
+REPLICAT rep1
+USERID ogg, PASSWORD qwer1234
+HANDLECOLLISIONS
+ASSUMETARGETDEFS
+DISCARDFILE ./dirrpt/rep1.DSC, append 
+MAP THI_QG.THONGTIN_THISINH,TARGET TRACUUTHI.THONGTIN_THISINH;
+
+-- Thực hiện đồng bộ dữ liệu
+-- IP: 10.30.144.149
+B1 - Lấy thông tin current sequence để exp dữ liệu bảng THONGTIN_THISINH
+
+select CURRENT_SCN from v$database;
+
+B2 - Thực hiện export dữ liệu bằng công cụ expdp/impdp hoặc exp/imp, sử dụng tham số FLASHBACK_SCN= [CURRENT_SCN]
+sau khi export cp dữ liệu sang 10.58.4.4
+
+-- IP: 10.58.4.4
+B3 - thực hiện import dữ liệu.
+
+-- IP: 10.30.144.149
+B4: thực hiện cập nhật scn đồng bộ
+ggsci>alter EXTRACT ext1, scn 1500259743
+
+B5: start lại các tiến trình
+-- IP: 10.30.144.149
+ggsci>start mgr
+ggsci>start ext
+ggsci>start pump
+
+-- IP: 10.58.4.4
+ggsci>start mgr
+ggsci>start rep
+
+
+
+
+

@@ -1,0 +1,129 @@
+
+------ TẠO USER, GROUP CẦN THIẾT
+groupadd oinstall
+groupadd dba
+groupadd oper
+groupadd asmadmin
+
+useradd -g oinstall -G dba,oper,asmadmin oracle
+passwd oracle
+
+-------TẠO ĐƯỜNG DẪN HOME VÀ BASE CHO ORACLE
+
+mkdir -p /u01/app/oracle/product/11.2.0/db_1
+mkdir -p /u01/app/oraInventory
+mkdir -p /u01/setup
+
+mkdir -p /u02/oradata
++++++++ Change quyền cho các thư mục liên quan đến việc cài đặt oracle
+
+mkdir -p /u01/redo01/
+mkdir -p /u01/redo02/
+mkdir -p /u01/archivelog/
+mkdir -p /u01/backup/
+
+
+chown -R oracle:oinstall /u02/
+chown -R oracle:oinstall /u01/	
+chown -R oracle:oinstall /redo01/
+chown -R oracle:oinstall /redo02/
+chown -R oracle:oinstall /archivelog/
+chown -R oracle:oinstall /backup/
+
+chmod -R 755 /u01/
+
+
+----------TẠO BIẾN MÔI TRƯỜNG CHO FILE .BASH PROFILE CỦA USER ORACLE
+
+Su – oracle
+
+Vi .bash_profile
++++++ Add thêm thông tin sau:
+
+# Oracle Settings
+TMP=/tmp; export TMP
+TMPDIR=$TMP; export TMPDIR
+
+ORACLE_BASE=/u01/app/oracle; export ORACLE_BASE
+ORACLE_HOME=$ORACLE_BASE/product/11.2.0/db_1; export ORACLE_HOME
+ORACLE_SID=DEMODG; export ORACLE_SID
+
+PATH=/usr/sbin:$PATH; export PATH
+PATH=$ORACLE_HOME/bin:$PATH; export PATH
+
+LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib; export LD_LIBRARY_PATH
+CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib; export CLASSPATH
+
+if [ $USER = "oracle" ]; then
+  if [ $SHELL = "/bin/ksh" ]; then
+    ulimit -p 16384
+    ulimit -n 65536
+  else
+    ulimit -u 16384 -n 65536
+  fi
+fi
+
+
+---------------------- alias
+vi .bashrc
+alias rman='rlwrap rman'
+alias sqlplus='rlwrap sqlplus'
+alias dgmgrl='rlwrap dgmgrl'
+
+
+-- ----- BONUS: kIỂM TRA CÁC PACKAGE CẦN THIẾT
+
+rpm -q binutils compat-libstdc++-33 compat-libstdc++-33 coreutils elfutils-libelf elfutils-libelf-devel gcc gcc-c++ glibc glibc glibc-common glibc-devel glibc-devel glibc-headers ksh libaio libaio libaio-devel libaio-devel libgcc libgcc libstdc++ libstdc++ libstdc++-devel make sysstat unixODBC unixODBC-devel
+
+
+-------- TẠO USER TRONG DATABASE
+
+SQL> create user openfire identified by 123456
+SQL> grant connect,resource to openfire;
+
+
+-------------cài file .tar
+
+./configuration
+make
+make install
+
+----- cài file rpm
+rpm -ivh file_name.rpm
+
+--- archive log list
+---- list backup of archivelog all;
+=== show parameter local_listener
+
+-------------------- BACKUP AND RESTORE ---------------
+===== OPEN DATABASE MODE ARCHIVE LOG
+===== rman target /
+===== backup database plus archivelog;
+=====
+=== startup nomout;
+=== rman target /
+=== restore controlfile from ''
+=== alter database mount;
+=== recover database;
+=== alter database open resetlogs;
+===
+
+
+--- decs dba_data_files;
+----- select file_names from dba_data_files
+====== ps -fu oracle
+==== df -h //kiem tra dung luong phan vung
+==== du -ah // kiem tra dung luong cac file trong thu muc
+----
+set lin 200: thay doi do dai dong trong teminal
+--- dgmgrl : mở data guard management 
+-- DISPLAY=localhost:0.0; export DISPLAY
+--- alter database flashback on
+---- .oraenv
+---- col name for A50 heading 'File name'
+---- COLUMN NAME FORMAT A24 //chinh sua kich thuoc cot name
+
+desc v$database;
+
+
+==== kiem tra cac process quan ly standby: select process from v$managed_standby;

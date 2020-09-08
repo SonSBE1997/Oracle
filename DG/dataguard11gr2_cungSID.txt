@@ -1,0 +1,505 @@
+Thong tin cau hinh:
+- primary server:
++ sid: DATA
++ mount point:
+
+Filesystem            Size  Used Avail Use% Mounted on
+/dev/sda1              18G  3.1G   14G  19% /
+tmpfs                 1.4G  360K  1.4G   1% /dev/shm
+/dev/sdb1             2.5G  2.1G  228M  91% /redo01
+/dev/sdb2             2.5G  2.1G  228M  91% /redo02
+/dev/sdb3             5.1G  179M  4.6G   4% /archive_log
+/dev/sdc1              12G  6.9G  4.4G  62% /u01
+/dev/sdc2              18G  1.7G   16G  10% /u02
+
+- standby server:
++ sid: DATA
++ tren standby server chi cai software, chua tao database
+
+Filesystem            Size  Used Avail Use% Mounted on
+/dev/sda1              18G  3.2G   14G  19% /
+tmpfs                 1.4G  364K  1.4G   1% /dev/shm
+/dev/sdb1             2.5G  2.1G  228M  91% /redo01
+/dev/sdb2             2.5G  2.1G  228M  91% /redo02
+/dev/sdb3              5.1G  157M  4.7G   4% /archive_log
+/dev/sdc1              12G  8.7G  2.7G  77% /u01
+/dev/sdc2              18G  1.7G   16G  10% /u02
+
+
+====backup current controlfile for standby
+1.Cau hinh tren may primary database
+1.a. Enable Archiving on Primary ( Neu server chua de che do archive)
+    SQL>shutdown immediate;
+    SQL>startup mount;
+    SQL>alter database archivelog;
+    SQL>alter database open;
+- Kiem tra log
+SQL>archive log list;
+1.b. Enable forced logging on primary database:
+   SQL> ALTER DATABASE FORCE LOGGING; //che do ghi tat ca hoạt động ra redo log
+1.c. Create standby Redo log groups:
+- exp:
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 4 ('/redo01/stb_redo01_1.log','/redo02/stb_redo01_2.log') SIZE 512M;
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 5 ('/redo01/stb_redo02_1.log','/redo02/stb_redo02_2.log') SIZE 512M;
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 6 ('/redo01/stb_redo03_1.log','/redo02/stb_redo03_2.log') SIZE 512M;
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 7 ('/redo01/stb_redo04_1.log','/redo02/stb_redo04_2.log') SIZE 512M;
+// hoặc 
+    alter database add standby logfile '/redo01/oracle/stb_redo01_1.log' size 512M;
+    alter database add standby logfile '/redo02/oracle/stb_redo01_2.log' size 512M;
+    alter database add standby logfile '/redo01/oracle/stb_redo02_1.log' size 512M;
+    alter database add standby logfile '/redo02/oracle/stb_redo02_2.log' size 512M;
+
+1.d. Thay doi tham so trong file pfile cua primary database:  initkunkun.ora
+- tao ban backup cho file initDEMO.ora
+- sua thong tin initDEMO.ora nhu sau 
+
+*.db_name='DEMO'
+*.db_unique_name='PRIMARY'
+*.fal_client='TO_PRIMARY'
+*.fal_server='TO_STANDBY'
+*.log_archive_config='DG_CONFIG=(PRIMARY,STANDBY)'
+*.LOG_ARCHIVE_DEST_1='LOCATION=/archivelog/ VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=PRIMARY'
+*.LOG_ARCHIVE_DEST_2='SERVICE=TO_STANDBY LGWR ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=STANDBY'
+*.log_archive_dest_state_1='ENABLE'
+*.log_archive_dest_state_2='ENABLE'
+*.LOG_ARCHIVE_FORMAT='DEMO_%t_%s_%r.arc'
+*.LOG_ARCHIVE_MAX_PROCESSES=30
+*.STANDBY_FILE_MANAGEMENT='AUTO'
+*.service_names='PRIMARY'
+*.db_create_online_log_dest_1='/redo01'
+*.db_create_online_log_dest_2='/redo02'
+
+//copy pfile sang standby
+scp $ORACLE_HOME/dbs/initDEMO.ora oracle@db2:$ORACLE_HOME/dbs/
+1.e.Restart db
+    SQL> shutdown immediate;
+    SQL> startup nomount pfile='/u01/app/oracle/product/11.2.0/db_1/dbs/initDEMO.ora';
+    SQL> create spfile from pfile='/u01/app/oracle/product/11.2.0/db_1/dbs/initDEMO.ora';
+1.f.Tao controlfile cho máy STAN
+    SQL>startup mount;
+    SQL> alter database create standby controlfile as '/u01/app/oracle/oradata/DEMO/controlstandby01.ctl';(tao 2 control file) 
+    SQL>alter database open
+
+2-.Cau hinh tren server Standby
+
+2.a.Tao cac cau truc thu muc giong nhu tren server Primary:
++ thu muc chua datafile
++ thu muc diag
++ thu muc admin
++ thu muc chua redo log, archive log
+...
+
+    scp -r /u01/app/oracle/diag  oracle@db2:/u01/app/oracle/
+    scp -r /u01/app/oracle/oradata/DEMO  oracle@db2:/u01/app/oracle/oradata/
+    scp -r /u01/app/oracle/admin oracle@db2:/u01/app/oracle
+    scp -r /u01/app/oracle/flash_recovery_area oracle@db2:/u01/app/oracle
+
+2.b. Clone db
+---Copy các datafile tu server Primary sang Standby vao thu muc tuong ung
+    //scp -r /u01/app/oracle/oradata/DEMO  oracle@db2:/u01/app/oracle/oradata/
+---Copy online logs tu server Primary sang Standby vao thu muc tuong ung
+    scp -r /redo01/stb*  oracle@db2:/redo01/
+    scp -r /redo02/stb*  oracle@db2:/redo02/
+    scp -r /archivelog/*  oracle@db2:/archivelog/
+---Copy controlfile controlstb01.ctl tu server Primary sang Standby vao thu muc tuong ung ( tao 2 file)
+  scp -r /u01/app/oracle/oradata/DEMO/controlstandby01.ctl  oracle@db2:/u01/app/oracle/oradata/DEMO
+  scp -r /u01/app/oracle/oradata/DEMO/controlstandby02.ctl  oracle@db2:/u01/app/oracle/oradata/DEMO
+---Copy tnsnames.ora va listener.ora tu server Primary sang Standby vao thu muc tuong ung
+    scp /u01/app/oracle/product/11.2.0/db_1/network/admin/tnsnames.ora oracle@db2:/u01/app/oracle/product/11.2.0/db_1/network/admin/
+    scp /u01/app/oracle/product/11.2.0/db_1/network/admin/listener.ora oracle@db2:/u01/app/oracle/product/11.2.0/db_1/network/admin/
+
+---Copy file orapwDEMO trong thu muc $ORACLE_HOME/dbs/ tu server Primary sang server Standby rename lai thanh orapwDEMOstb de tao password giong nhau, chu y duong dan tuong ung giong nhau
+    scp -r /u01/app/oracle/product/11.2.0/db_1/dbs/orapwDEMO  oracle@db2:/u01/app/oracle/product/11.2.0/db_1/dbs/
+    hoặc
+    scp $ORACLE_HOME/dbs/orapwDEMO oracle@db2:$ORACLE_HOME/dbs/
+//////// using RMAN
+
+
+2.c.Tao file initDEMO.ora (pfile) cho server standby:
+2.c.1. Copy pfile initDEMO.ora tu server Primary sang server Standby vao thu muc tuong ung va rename lai thanh initkunkunstb.ora
+   scp $ORACLE_HOME/dbs/initDEMO.ora oracle@db2:$ORACLE_HOME/dbs/
+2.c.2. Edit file initDEMO.ora voi cac tham so sau:
+
+*.db_name='DEMO'
+*.db_unique_name='STANDBY'
+*.fal_client='TO_STANDBY'
+*.fal_server='TO_PRIMARY'
+*.log_archive_config='DG_CONFIG=(PRIMARY,STANDBY)'
+*.LOG_ARCHIVE_DEST_1='LOCATION=/archivelog/ VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=STANDBY'
+*.LOG_ARCHIVE_DEST_2='SERVICE=TO_PRIMARY LGWR ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=PRIMARY'
+*.log_archive_dest_state_1='ENABLE'
+*.log_archive_dest_state_2='ENABLE'
+*.LOG_ARCHIVE_FORMAT='DATA_%t_%s_%r.arc'
+*.LOG_ARCHIVE_MAX_PROCESSES=30
+*.STANDBY_FILE_MANAGEMENT='AUTO'
+*.service_names='STANDBY'
+*.db_create_online_log_dest_1='/redo01'
+*.db_create_online_log_dest_2='/redo02'
+
+
+#############
+*.DB_FILE_NAME_CONVERT='STANDBY','PRIMARY' 
+*.LOG_FILE_NAME_CONVERT='STANDBY','PRIMARY' 
+
+3.Cau hinh tnsnames.ora va listener.ora tren ca 2 server giong nhau:
+3.a. tnsnames.ora:
+DEMO =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.10.101)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = SHARED)
+      (SERVICE_NAME = DEMO)
+    )
+  )
+#--------------DG------------------------
+TO_STANDBY =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.10.102)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVICE_NAME = DEMO)
+    )
+  )
+TO_PRIMARY =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.10.101)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVICE_NAME = DEMO)
+    )
+  )
+
+
+
+3.b. listener.ora:
+
+LISTENER =
+  (DESCRIPTION_LIST =
+    (DESCRIPTION =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.10.101)(PORT = 1521))
+    )
+  )
+
+SID_LIST_LISTENER =
+  (SID_LIST =
+    (SID_DESC =
+      (SID_NAME = PLSExtProc)
+      (ORACLE_HOME = /u01/app/oracle/product/11.2.0/db_1)
+      (PROGRAM = extproc)
+    )
+    
+     (SID_DESC =
+      (SID_NAME = DEMO)
+      (ORACLE_HOME = /u01/app/oracle/product/11.2.0/db_1)
+      (GLOBAL_DBNAME = DEMO)
+    )
+  )
+ADR_BASE_LISTENER = /u01/app/oracle
+
+  
+3.c Restart listener tren ca 2 server 
+$lsnrctl stop
+$lsnrctl start
+
+3.d. check tnsping tren ca 2 server
+$tnsping to_standby
+$tnsping to_primary
+
+4.start standby db:
+- export ORACLE_SID=DATA
+- sqlplus/nolog
+SQL>conn /as sysdba
+SQL>startup nomount pfile='/u01/app/oracle/product/11.2.0/db_1/dbs/initDEMO.ora';
+SQL>create spfile from pfile='/u01/app/oracle/product/11.2.0/db_1/dbs/initDEMO.ora';
+SQL>shutdown immediate;
+SQL>Startup mount;
+
+4.1 Set the database into managed recovery
+Start the apply process on standby server.
+# Foreground redo apply. Session never returns until cancel. 
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE;
+
+# Background redo apply. Control is returned to the session once the apply process is started.
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION;
+If you need to cancel the apply process, issue the following command.
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
+If you prefer, you can set a delay between the arrival of the archived redo log and it being applied on the standby server using the following commands.
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DELAY 30 DISCONNECT FROM SESSION;
+
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE NODELAY DISCONNECT FROM SESSION;
+Provided you have configured standby redo logs, you can start real-time apply using the following command.
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE; 
+##########################
+SQL>alter database recover managed standby database disconnect from session;
+ 
+4.2.Verify the standby database is performing properly : Xác minh cơ sở dữ liệu dự phòng đang hoạt động đúng
+- On Primary, excute the following querys:
+SQL>select max(sequence#) from v$archived_log;
+SQL>alter system switch logfile;
+SQL>archive log list;
+SQL>select max(sequence#) from v$archived_log;
+ 
+- On Standby, excute the excute the following querys:
+SQL> select DATABASE_ROLE,OPEN_MODE from v$database;
+SQL>archive log list;
+SQL>select max(sequence#) from v$archived_log;
+SQL>select max(sequence#), applied from v$archived_log group by applied; 
+- chuyen standby ve che do readonly:
+SQL>alter database recover managed standby database cancel;
+SQL>alter database open read only;
+SQL>alter database recover managed standby database disconnect from session;
+
+5.Cau hinh active dataguard:
+- Tren server standby:
+Cancel the manager recovery
+SQL> recover managed standby database cancel;
+Open the database in read-only mode
+SQL> alter database open read only;
+Restart the Redo apply
+SQL> recover managed standby database disconnect using current logfile;
+
+6.chek lai:
+- insert vao db primary
+- select tren db standby
+ 
+SELECT sequence#, first_time, next_time
+FROM   v$archived_log
+ORDER BY sequence#;
+
+
+
+conn sys/123456@TO_PRIMARY as sysdba
+SELECT DATABASE_ROLE, DB_UNIQUE_NAME INSTANCE, OPEN_MODE, PROTECTION_MODE, PROTECTION_LEVEL, SWITCHOVER_STATUS FROM V$DATABASE;
+
+
+SELECT RECOVERY_MODE FROM V$ARCHIVE_DEST_STATUS WHERE DEST_ID=2 ;
+
+----------
+managed real time applie
+select RECOVERY_MODE, DATABASE_MODE, PROTECTION_MODE from v$archive_dest_status;
+
+
+ =======================SWITCHOVER=============================
+
+------ on old primary:
+alter database commit to switchover to standby;//with session shutdown
+shu immediate;
+startup nomount; 
+alter database mount standby database;
+alter system set log_archive_dest_state_2=defer;
+
+-------- on old standby 
+alter database commit to switchover to primary;
+shu immediate; 
+startup
+
+// on new standby
+alter system set log_archive_dest_state_2=enable;
+recover managed standby database disconnect from session;
+recover managed standby database cancel;
+alter database open read only;
+recover managed standby database disconnect using log file;
+
+
+==================== FAILOVER ===================================
+-- on old standby database
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE FINISH;
+ALTER DATABASE ACTIVATE STANDBY DATABASE;
+
+
+-- convert old primary to new standby database
+SQL> SELECT TO_CHAR(STANDBY_BECAME_PRIMARY_SCN) FROM V$DATABASE;
+
+SQL> SHUTDOWN IMMEDIATE;
+SQL> STARTUP MOUNT;
+---
+SQL> FLASHBACK DATABASE TO SCN standby_became_primary_scn;
+hoac 
+
+RMAN> RUN
+    {
+      SET UNTIL SCN <standby_became_primary_scn + 1>;
+      RESTORE DATABASE;
+      RECOVER DATABASE;
+     }
+
+hoac //chi su dung khi moi backup trong vai gio trc
+SQL> RECOVER DATABASE USING BACKUP CONTROLFILE UNTIL CHANGE  <standby_became_primary_scn + 1>;
+----
+SQL> ALTER DATABASE CONVERT TO PHYSICAL STANDBY;
+SQL> SHUTDOWN IMMEDIATE;
+SQL> STARTUP MOUNT;
+
+================================ PROTECTION MODE =============================
+---- Check mode now
+SQL> SELECT protection_mode FROM v$database;
+
+-- Maximum Availability.
+ALTER SYSTEM SET LOG_ARCHIVE_DEST_2='SERVICE=TO_STANDBY AFFIRM SYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=STANDBY';
+ALTER DATABASE SET STANDBY DATABASE TO MAXIMIZE AVAILABILITY;
+
+-- Maximum Performance.
+ALTER SYSTEM SET LOG_ARCHIVE_DEST_2='SERVICE=TO_STANDBY NOAFFIRM ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=STANDBY';
+ALTER DATABASE SET STANDBY DATABASE TO MAXIMIZE PERFORMANCE;
+
+-- Maximum Protection.
+ALTER SYSTEM SET LOG_ARCHIVE_DEST_2='SERVICE=TO_STANDBY AFFIRM SYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=STANDBY';
+SHUTDOWN IMMEDIATE;
+STARTUP MOUNT;
+ALTER DATABASE SET STANDBY DATABASE TO MAXIMIZE PROTECTION;
+ALTER DATABASE OPEN;
+
+===================== CREATE SNAPSHOT STANDBY DATABASE =========================
+1. convert physical to snapshot
+--create physical standby
+--on physical standby database:
+recover managed standby database cancel;
+alter database convert to snapshot standby;
+alter database open
+
+//shu immediate;
+//startup mount;
+//alter database convert to snapshot standby;
+//recover managed standby database disconnect using current logfile;
+2.Convert snapshot to physical (note: protection_mode cua primary khong phai la maximum protection_mode)
+
+SHUTDOWN IMMEDIATE;
+STARTUP MOUNT;
+ALTER DATABASE CONVERT TO PHYSICAL STANDBY;
+SHUTDOWN IMMEDIATE;
+STARTUP NOMOUNT;
+ALTER DATABASE MOUNT STANDBY DATABASE;
+alter database open read only;
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT using current logfile;
+SELECT flashback_on FROM v$database;
+
+ =================== CREATE LOGICAL STANDBY DATABASE =========================
+ select supplemental_log_data_pk, supplimental_log_data_ui from v$database;
+ alter database add supplememtal log data(primary key,unique) columns;
+ -- check: select owner,table_name from dba_logstdby_not_unique 
+           where bad_column='Y' 
+           and table_name not in (select distinct table_name from dba_logstdby_unsupported);
+==== Check unsupported data type
+select * from dba_logstdby_unsupported order by owner;
+
+ select * from dba_logstdby_not_unique;
+====== on standby 
+    recover managed standby database cancel;
+===== on primary
+    mkdir -p /archivelog/online
+    mkdir -p /archivelog/standby
+
+    ALTER SYSTEM SET LOG_ARCHIVE_DEST_1='LOCATION=/archivelog/online/ VALID_FOR=(ONLINE_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=PRIMARY' scope=both;
+
+
+    ALTER SYSTEM SET LOG_ARCHIVE_DEST_2='SERVICE=TO_STANDBY1 ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=STANDBY1' scope=both;
+
+    alter system set log_archive_dest_3='LOCATION=/archivelog/standby/ VALID_FOR=(STANDBY_LOGFILES,STANDBY_ROLE) db_unique_name=PRIMARY' scope=both;
+
+    alter system set LOG_ARCHIVE_DEST_STATE_1=ENABLE scope=both; 
+    alter system set LOG_ARCHIVE_DEST_STATE_2=ENABLE scope=both; 
+    alter system set LOG_ARCHIVE_DEST_STATE_3=ENABLE scope=both;
+
+    alter system set log_archive_dest_state_3=enable ; //scope=both?? //defer??
+    
+
+   EXECUTE DBMS_LOGSTDBY.BUILD;
+=== on standby 
+//neu dang o che do active apply: shu immediate; startup mount;
+  alter database recover to logical standby DEMODG;// db_name
+
+  shu immediate;
+  startup mount;
+  alter system set LOG_ARCHIVE_DEST_1='LOCATION=/archivelog/online/ VALID_FOR=(ONLINE_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=STANDBY' scope=both;
+  
+  //alter system set LOG_ARCHIVE_DEST_1='LOCATION=/archivelog/online/ VALID_FOR=(ONLINE_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=STANDBY1';
+
+  alter system set LOG_ARCHIVE_DEST_2='SERVICE=TO_PRIMARY ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=PRIMARY'; 
+  
+  alter system set LOG_ARCHIVE_DEST_3='LOCATION=/archivelog/standby/ VALID_FOR=(STANDBY_LOGFILES,STANDBY_ROLE) DB_UNIQUE_NAME=STANDBY1' scope=both; 
+
+  alter system set LOG_ARCHIVE_DEST_STATE_1=ENABLE scope=both; 
+  alter system set LOG_ARCHIVE_DEST_STATE_2=ENABLE scope=both; 
+  alter system set LOG_ARCHIVE_DEST_STATE_3=ENABLE scope=both;
+  shu immediate;
+  startup mount;
+
+  ALTER DATABASE OPEN RESETLOGS;
+
+  alter database start logical standby apply immediate;
+
+
+//// CHECK
+  select max(sequence#) from dba_logstdby_log;
+  //show parameters archive
+
+   SELECT FILE_NAME, SEQUENCE# AS SEQ#, FIRST_CHANGE# AS F_SCN#, 
+    NEXT_CHANGE# AS N_SCN#, TIMESTAMP, 
+    DICT_BEGIN AS BEG, DICT_END AS END,   THREAD# AS THR#, APPLIED FROM DBA_LOGSTDBY_LOG 
+    ORDER BY SEQUENCE#;
+
+  ======== Monitoring Log file Archival Information
+On Primary Server:
+  SQL> SELECT THREAD#, SEQUENCE# FROM V$LOG WHERE STATUS='CURRENT';
+  SQL> ALTER SYSTEM ARCHIVE LOG CURRENT;
+On Standby Server:
+  SELECT FILE_NAME FROM DBA_LOGSTDBY_LOG WHERE THREAD#=1 AND SEQUENCE#= (select sequence# from DBA_LOGSTDBY_LOG);
+  ///Otherwise you can use below query in which APPLIED_SCN and NEWEST_SCN;
+  SQL> SELECT APPLIED_SCN, NEWEST_SCN FROM DBA_LOGSTDBY_PROGRESS;
+
+
+alter system archive log current;
+========== vertify tren standby
+select name,value from v$logstdby_stats where name='coordinator state';
+===== view to see current SQL Apply activity:
+select sid, serial#, spid,type, high_scn from v$logstdby_process;
+==== check over all progress of SQL Apply
+select applied_scn, latest_scn from v$logstdby_progress;
+
+====================================DATA GUARD BROKER CONFIGURATION ===========================================
+remove configuration: xoa configuration trong dgmgrl
+show configuration verbose;
+show database 'PRIMARY';
+show database 'STANDBY';
+
+- on primary
+ALTER SYSTEM SET dg_broker_start = true scope=both;
+- on physical standby
+ALTER SYSTEM SET dg_broker_start = true scope=both;
+- phan con lai chi can thuc hien tren primary
+DGMGRL: 
+    connect sys
+//tao 1 configuration
+    create configuration dg1 as primary database is 'PRIMARY' connect identifier is 'TO_PRIMARY';
+//them standby
+    ADD DATABASE 'STANDBY1' AS CONNECT IDENTIFIER IS 'TO_STANDBY1' MAINTAINED AS PHYSICAL;
+//enable configuration
+    enable configuration
+
+==fast-start failover
+flashback tren ca 2 server
+change protection mode => maximum Availability
+DGMGRL> edit database 'PRIMARY' set property logxptmode='sync';
+DGMGRL> edit database 'STANDBY' set property logxptmode='sync';
+DGMGRL> edit configuration set protection mode as maxavailability;
+DGMGRL> edit database 'PRIMARY' set property faststartfailovertarget='STANDBY';
+DGMGRL> edit database 'STANDBY' set property faststartfailovertarget='PRIMARY';
+DGMGRL> enable fast_start failover;
+DGMGRL> start observer; 
+== khoi phuc lai server primary 
+REINSTATE DATABASE 'PRIMARY'
+// DGMGRL>stop observer;
+============== switchover =======
+DGMGRL> switchover to 'STANDBY'
+
+changed tnsnames.ora
+
+===== reinstate 
+
+//SQL> alter system set log_archive_max_processes=4 scope=both;
+SQL> alter system set archive_lag_target=1 scope=both;
+SQL> alter system set log_archive_min_succeed_dest=1 scope=both;
+========== convert to snapshot standby database
+convert database 'STANDBY1' to snapshot standby
+==========
+SELECT STATUS, GAP_STATUS FROM V$ARCHIVE_DEST_STATUS WHERE DEST_ID = 2;

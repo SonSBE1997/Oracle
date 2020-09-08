@@ -1,0 +1,269 @@
+========================== CAU HINH ORACLE NET==========================================
+.a. tnsnames.ora:
+DEMODG =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = db1)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = SHARED)
+      (SERVICE_NAME = DEMODG)
+    )
+  )
+#--------------DG------------------------
+TO_STANDBY1 =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = db2)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVICE_NAME = DEMODG)
+    )
+  )
+
+TO_STANDBY2 =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = db3)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVICE_NAME = DEMODG)
+    )
+  )
+
+TO_PRIMARY =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = db1)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVICE_NAME = DEMODG)
+    )
+  )
+
+
+
+.b. listener.ora:
+
+LISTENER =
+  (DESCRIPTION_LIST =
+    (DESCRIPTION =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.10.122)(PORT = 1521))
+    )
+  )
+
+SID_LIST_LISTENER =
+  (SID_LIST =
+    (SID_DESC =
+      (SID_NAME = PLSExtProc)
+      (ORACLE_HOME = /u01/app/oracle/product/11.2.0/db_1)
+      (PROGRAM = extproc)
+    )
+     (SID_DESC =
+      (SID_NAME = DEMODG)
+      (ORACLE_HOME = /u01/app/oracle/product/11.2.0/db_1)
+      (GLOBAL_DBNAME = DEMODG)
+    )
+  )
+ADR_BASE_LISTENER = /u01/app/oracle
+
+  
+.c Restart listener tren ca 2 server 
+$lsnrctl stop
+$lsnrctl start
+
+.d. check tnsping tren ca 2 server
+$tnsping to_standby
+$tnsping to_primary
+
+----------------------------- PRIMARY ---------------------
+1.c. Create standby Redo log groups:(so group redo log tren standby = so group tren primary + 1)
+	- exp:
+	ALTER DATABASE ADD STANDBY LOGFILE GROUP 4 ('/redo01/stb_redo01_1.log','/redo02/stb_redo01_2.log') SIZE 512M;
+	ALTER DATABASE ADD STANDBY LOGFILE GROUP 5 ('/redo01/stb_redo02_1.log','/redo02/stb_redo02_2.log') SIZE 512M;
+	ALTER DATABASE ADD STANDBY LOGFILE GROUP 6 ('/redo01/stb_redo03_1.log','/redo02/stb_redo03_2.log') SIZE 512M;
+	ALTER DATABASE ADD STANDBY LOGFILE GROUP 7 ('/redo01/stb_redo04_1.log','/redo02/stb_redo04_2.log') SIZE 512M;
+
+==== backup current controlfile for standby
+1.Cau hinh tren may primary database
+1.a. Enable Archiving on Primary ( Neu server chua de che do archive)
+    SQL>shutdown immediate;
+    SQL>startup mount;
+    SQL>alter database archivelog;
+    SQL>alter database open;
+- Kiem tra log
+SQL>archive log list;
+1.b. Enable forced logging on primary database:
+   SQL> ALTER DATABASE FORCE LOGGING;
+
+// hoặc  alter database add standby logfile '/redo01/oracle/stb_redo01_1.log' size 512M;
+1.d. Thay doi tham so trong file pfile cua primary database:
+- tao ban backup cho file initDEMODG.ora
+- sua thong tin initDEMODG.ora nhu sau 
+
+*.db_name='DEMODG'
+*.db_unique_name='PRIMARY'
+*.fal_client='TO_PRIMARY'
+#*.fal_server='TO_STANDBY1','TO_STANDBY2'
+*.fal_server='TO_STANDBY1'
+#*.log_archive_config='DG_CONFIG=(PRIMARY,STANDBY1,STANDBY2)'
+*.log_archive_config='DG_CONFIG=(PRIMARY,STANDBY1)'
+*.LOG_ARCHIVE_DEST_1='LOCATION=/archivelog/ VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=PRIMARY'
+*.LOG_ARCHIVE_DEST_2='SERVICE=TO_STANDBY1 LGWR ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=STANDBY1'
+#*.LOG_ARCHIVE_DEST_3='SERVICE=TO_STANDBY2 LGWR ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=STANDBY2'
+*.log_archive_dest_state_1='ENABLE'
+*.log_archive_dest_state_2='ENABLE'
+#*.log_archive_dest_state_3='ENABLE'
+*.LOG_ARCHIVE_FORMAT='DEMODG_%t_%s_%r.arc'
+*.LOG_ARCHIVE_MAX_PROCESSES=30
+*.STANDBY_FILE_MANAGEMENT='AUTO'
+*.service_names='PRIMARY'
+*.db_create_online_log_dest_1='/redo01'
+*.db_create_online_log_dest_2='/redo02'
+
+1.e.Restart db
+    SQL> shutdown immediate;
+    SQL> startup nomount pfile='/u01/app/oracle/product/11.2.0/db_1/dbs/initDEMODG.ora';
+    SQL> create spfile from pfile='/u01/app/oracle/product/11.2.0/db_1/dbs/initDEMODG.ora';
+1.f.Tao controlfile cho máy STANDBY
+    SQL>startup mount;
+    SQL> alter database create standby controlfile as '/u01/app/oracle/oradata/DEMODG/controlstandby01.ctl';(tao 2 control file) 
+    SQL>shu abort;
+
+
+
+==================================- STANDBY -===============================================
+.a.Tao cac cau truc thu muc giong nhu tren server Primary:
++ thu muc chua datafile
++ thu muc diag
++ thu muc admin
++ thu muc chua redo log, archive log
+...
+	mkdir -p /u01/app/oracle/oradata/DEMODG
+	mkdir -p /u01/app/oracle/admin/DEMODG/adump
+	mkdir -p /u01/app/oracle/admin/DEMODG/pfile
+	mkdir -p /u01/app/oracle/admin/DEMODG/dpdump
+	mkdir -p /u01/app/oracle/diag
+	mkdir -p /u01/app/oracle/flash_recovery_area/DEMODG
+
+    //scp -r /u01/app/oracle/diag  oracle@db2:/u01/app/oracle/
+    //scp -r /u01/app/oracle/oradata/DEMODG  oracle@db2:/u01/app/oracle/oradata/
+    //scp -r /u01/app/oracle/admin oracle@db2:/u01/app/oracle
+    //scp -r /u01/app/oracle/flash_recovery_area oracle@db2:/u01/app/oracle
+
+.b. Clone db
+---Copy các datafile tu server Primary sang Standby vao thu muc tuong ung
+    scp -r /u01/app/oracle/oradata/DEMODG  oracle@db2:/u01/app/oracle/oradata/
+---Copy online logs tu server Primary sang Standby vao thu muc tuong ung
+    scp -r /redo01/*  oracle@db2:/redo01/
+    scp -r /redo02/* oracle@db2:/redo02/
+    scp -r /archivelog/* oracle@db2:/archivelog/
+---Copy controlfile controlstb01.ctl tu server Primary sang Standby vao thu muc tuong ung ( tao 2 file)
+  //scp -r /u01/app/oracle/oradata/DEMODG/controlstandby01.ctl  oracle@db2:/u01/app/oracle/oradata/DEMODG
+  //scp -r /u01/app/oracle/oradata/DEMODG/controlstandby02.ctl  oracle@db2:/u01/app/oracle/oradata/DEMODG
+---Copy tnsnames.ora va listener.ora tu server Primary sang Standby vao thu muc tuong ung
+    scp -r /u01/app/oracle/product/11.2.0/db_1/network/admin/tnsnames.ora oracle@db2:/u01/app/oracle/product/11.2.0/db_1/network/admin/
+    scp -r /u01/app/oracle/product/11.2.0/db_1/network/admin/listener.ora oracle@db2:/u01/app/oracle/product/11.2.0/db_1/network/admin/
+
+    scp -r $ORACLE_HOME/network/admin/tnsnames.ora oracle@db2:$ORACLE_HOME/network/admin/
+    scp -r $ORACLE_HOME/network/admin/listener.ora oracle@db2:$ORACLE_HOME/network/admin/
+
+---Copy file orapwDEMO trong thu muc $ORACLE_HOME/dbs/ tu server Primary sang server Standby rename lai thanh orapwDEMOstb de tao password giong nhau, chu y duong dan tuong ung giong nhau
+    scp -r /u01/app/oracle/product/11.2.0/db_1/dbs/orapwDEMODG  oracle@db2:/u01/app/oracle/product/11.2.0/db_1/dbs/
+    hoặc
+    scp -r $ORACLE_HOME/dbs/orapwDEMODG oracle@db2:$ORACLE_HOME/dbs/
+
+
+     ---- 
+    cd $ORACLE_BASE/oradata/DEMODG
+    rm -rf control01.ctl
+    mv controlstandby01.ctl  control01.ctl
+    cp control01.ctl $ORACLE_BASE/flash_recovery_area/DEMODG
+    cd $ORACLE_BASE/flash_recovery_area/DEMODG
+    mv control01.ctl control02.ctl
+
+.c.Tao file initDEMODG.ora (pfile) cho server standby:
+.c.1. Copy pfile initDEMODG.ora tu server Primary sang server Standby
+   scp $ORACLE_HOME/dbs/initDEMODG.ora oracle@db2:$ORACLE_HOME/dbs/
+   scp $ORACLE_HOME/dbs/initDEMODG.ora oracle@db3:$ORACLE_HOME/dbs/
+.c.2. Edit file initDEMO.ora voi cac tham so sau:
+
+#*.db_name='DEMODG'
+*.db_unique_name='STANDBY1'
+*.fal_client='TO_STANDBY1'
+#*.fal_server='TO_PRIMARY','TO_STANDBY2'
+*.fal_server='TO_PRIMARY'
+#*.log_archive_config='DG_CONFIG=(PRIMARY,STANDBY1,STANDBY2)'
+*.log_archive_config='DG_CONFIG=(PRIMARY,STANDBY1)'
+*.LOG_ARCHIVE_DEST_1='LOCATION=/archivelog/ VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=STANDBY1'
+*.LOG_ARCHIVE_DEST_2='SERVICE=TO_PRIMARY LGWR ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=PRIMARY'
+#*.LOG_ARCHIVE_DEST_3='SERVICE=TO_STANDBY2 LGWR ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=STANDBY2'
+*.log_archive_dest_state_1='ENABLE'
+*.log_archive_dest_state_2='ENABLE'
+#*.log_archive_dest_state_3='ENABLE'
+*.LOG_ARCHIVE_FORMAT='DEMODG%t_%s_%r.arc'
+*.LOG_ARCHIVE_MAX_PROCESSES=30
+*.STANDBY_FILE_MANAGEMENT='AUTO'
+*.service_names='STANDBY1'
+*.db_create_online_log_dest_1='/redo01'
+*.db_create_online_log_dest_2='/redo02'
+=============
+
+*.db_name='DEMODG'
+*.db_unique_name='STANDBY2'
+*.fal_client='TO_STANDBY2'
+*.fal_server='TO_STANDBY1','TO_PRIMARY'
+*.log_archive_config='DG_CONFIG=(PRIMARY,STANDBY1,STANDBY2)'
+*.LOG_ARCHIVE_DEST_1='LOCATION=/archivelog/ VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=STANDBY2'
+*.LOG_ARCHIVE_DEST_2='SERVICE=TO_STANDBY1 LGWR ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=STANDBY1'
+*.LOG_ARCHIVE_DEST_3='SERVICE=TO_PRIMARY LGWR ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=PRIMARY'
+*.log_archive_dest_state_1='ENABLE'
+*.log_archive_dest_state_2='ENABLE'
+*.log_archive_dest_state_3='ENABLE'
+*.LOG_ARCHIVE_FORMAT='DEMODG%t_%s_%r.arc'
+*.LOG_ARCHIVE_MAX_PROCESSES=30
+*.STANDBY_FILE_MANAGEMENT='AUTO'
+*.service_names='STANDBY2'
+*.db_create_online_log_dest_1='/redo01'
+*.db_create_online_log_dest_2='/redo02'
+
+====
+.start standby db:
+- export ORACLE_SID=DEMODG
+- sqlplus/nolog
+SQL>conn /as sysdba
+SQL>startup nomount pfile='/u01/app/oracle/product/11.2.0/db_1/dbs/initDEMODG.ora';
+SQL>create spfile from pfile='/u01/app/oracle/product/11.2.0/db_1/dbs/initDEMODG.ora';
+SQL>shutdown immediate;
+SQL>Startup mount;
+
+conn sys/123456@TO_PRIMARY as sysdba
+================================ STEP TRANSPORT AND APPLY ============================
+
+4.1 Set the database into managed recovery: on standby
+SQL>alter database recover managed standby database disconnect from session;
+ 
+4.2.Verify the standby database is performing properly : Xác minh cơ sở dữ liệu dự phòng đang hoạt động đúng
+- On Primary, excute the following querys:
+SQL>select max(sequence#) from v$archived_log;
+SQL>alter system switch logfile;
+SQL>archive log list;
+SQL>select max(sequence#) from v$archived_log;
+ 
+- On Standby, excute the excute the following querys:
+SQL> select DATABASE_ROLE,OPEN_MODE from v$database;
+SQL>archive log list;
+SQL>select max(sequence#) from v$archived_log;
+SQL>select max(sequence#), applied from v$archived_log group by applied; 
+- chuyen standby ve che do readonly:
+SQL>alter database recover managed standby database cancel;
+SQL>alter database open read only;
+SQL>alter database recover managed standby database disconnect from session;
+
+5.Cau hinh active dataguard:
+- Tren server standby:
+Cancel the manager recovery
+SQL> recover managed standby database cancel;
+Open the database in read-only mode
+SQL> alter database open read only;
+Restart the Redo apply
+SQL> recover managed standby database disconnect using current logfile;
+
+
+
+//*.LOG_ARCHIVE_START = TRUE
+//*.standby_file_management = Auto
+//*.remote_archive_enable = True
+clear

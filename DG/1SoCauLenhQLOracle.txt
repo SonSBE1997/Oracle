@@ -1,0 +1,5 @@
+--  liệt kê 100 dòng cuối trong file $ORACLE_BASE/diag/rdbms/demo/demo/trace/alert_demo.log
+tail -100f 
+---- enterprise manager
+emctl status dbconsole //xem trạng thái
+emctl start dbconsole 
